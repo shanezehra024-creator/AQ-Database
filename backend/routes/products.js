@@ -68,4 +68,27 @@ router.get('/detailed', async (req, res) => {
   }
 });
 
+// POST /api/products
+// Adds a brand new product, typed in directly through the UI.
+router.post('/', async (req, res) => {
+  const { productName, quantity, sellingPrice, reStockAt } = req.body;
+
+  if (!productName || sellingPrice == null) {
+    return res.status(400).json({ error: 'productName and sellingPrice are required' });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO product (productname, quantity, sellingprice, restockat)
+       VALUES ($1, $2, $3, $4)
+       RETURNING productid AS "productID"`,
+      [productName, quantity || 0, sellingPrice, reStockAt || 0]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to add product' });
+  }
+});
+
 module.exports = router;
