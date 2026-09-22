@@ -15,7 +15,6 @@ const PAGE_TITLES = {
   'add-product': 'Add Product',
   'add-supplier': 'Add Supplier'
 };
-};
 
 let inventoryCache = []; // used by the search box so we don't re-fetch on every keystroke
 
