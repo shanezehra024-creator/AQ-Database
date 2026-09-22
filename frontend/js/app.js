@@ -11,7 +11,10 @@ const PAGE_TITLES = {
   prices: 'Price List',
   detailed: 'Detailed Inventory',
   history: 'Purchase History',
-  'add-purchase': 'Add Purchase'
+  'add-purchase': 'Add Purchase',
+  'add-product': 'Add Product',
+  'add-supplier': 'Add Supplier'
+};
 };
 
 let inventoryCache = []; // used by the search box so we don't re-fetch on every keystroke
@@ -35,6 +38,9 @@ function loadPage(page) {
     case 'detailed': return renderDetailedInventory();
     case 'history': return renderPurchaseHistory();
     case 'add-purchase': return renderAddPurchase();
+    case 'add-product': return renderAddProduct();
+    case 'add-supplier': return renderAddSupplier();
+  }
   }
 }
 
@@ -350,6 +356,91 @@ async function savePurchase() {
   } catch (err) {
     showAlert("Couldn't save the purchase. Check the backend logs.", 'error');
   }
+}
+// ---------------- Page 6: Add Product ----------------
+function renderAddProduct() {
+  pageContentEl.innerHTML = `
+    <div class="card">
+      <div class="form-row">
+        <div>
+          <label for="new-product-name">Product Name</label>
+          <input type="text" id="new-product-name" placeholder="e.g. Brake Pad">
+        </div>
+        <div>
+          <label for="new-product-quantity">Starting Quantity</label>
+          <input type="number" id="new-product-quantity" min="0" value="0">
+        </div>
+      </div>
+      <div class="form-row">
+        <div>
+          <label for="new-product-price">Selling Price</label>
+          <input type="number" id="new-product-price" min="0" step="0.01" placeholder="0.00">
+        </div>
+        <div>
+          <label for="new-product-restock">Restock At</label>
+          <input type="number" id="new-product-restock" min="0" placeholder="e.g. 5">
+        </div>
+      </div>
+      <button class="btn btn-primary" id="save-product" type="button">Save Product</button>
+    </div>
+  `;
+
+  document.getElementById('save-product').addEventListener('click', async () => {
+    const productName = document.getElementById('new-product-name').value.trim();
+    const quantity = Number(document.getElementById('new-product-quantity').value) || 0;
+    const sellingPrice = Number(document.getElementById('new-product-price').value);
+    const reStockAt = Number(document.getElementById('new-product-restock').value);
+
+    if (!productName || isNaN(sellingPrice) || isNaN(reStockAt)) {
+      showAlert('Product name, selling price, and restock level are required.', 'error');
+      return;
+    }
+
+    try {
+      await api.addProduct({ productName, quantity, sellingPrice, reStockAt });
+      showAlert(`"${productName}" added.`, 'success');
+      renderAddProduct();
+    } catch (err) {
+      showAlert("Couldn't save the product. Check the backend logs.", 'error');
+    }
+  });
+}
+
+// ---------------- Page 7: Add Supplier ----------------
+function renderAddSupplier() {
+  pageContentEl.innerHTML = `
+    <div class="card">
+      <div class="form-row">
+        <div>
+          <label for="new-supplier-name">Supplier Name</label>
+          <input type="text" id="new-supplier-name" placeholder="e.g. Auto Parts Lahore">
+        </div>
+        <div>
+          <label for="new-supplier-phone">Phone Number</label>
+          <input type="text" id="new-supplier-phone" placeholder="e.g. 0300-1234567">
+        </div>
+      </div>
+      <button class="btn btn-primary" id="save-supplier" type="button">Save Supplier</button>
+    </div>
+  `;
+
+  document.getElementById('save-supplier').addEventListener('click', async () => {
+    const supplierName = document.getElementById('new-supplier-name').value.trim();
+    const supplierPhone = document.getElementById('new-supplier-phone').value.trim();
+
+    if (!supplierName) {
+      showAlert('Supplier name is required.', 'error');
+      return;
+    }
+
+    try {
+      await api.addSupplier({ supplierName, supplierPhone });
+      showAlert(`"${supplierName}" added.`, 'success');
+      renderAddSupplier();
+    } catch (err) {
+      showAlert("Couldn't save the supplier. Check the backend logs.", 'error');
+    }
+  });
 }
 
 // ---------------- Small utility ----------------
