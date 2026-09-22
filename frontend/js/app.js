@@ -41,7 +41,6 @@ function loadPage(page) {
     case 'add-supplier': return renderAddSupplier();
   }
   }
-}
 
 // ---------------- Helpers ----------------
 function money(value) {
