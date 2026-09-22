@@ -27,5 +27,7 @@ const api = {
   getDetailedInventory: () => apiGet('/products/detailed'),
   getPurchaseHistory: () => apiGet('/purchases'),
   getSuppliers: () => apiGet('/suppliers'),
-  addPurchase: (purchase) => apiPost('/purchases', purchase)
+  addPurchase: (purchase) => apiPost('/purchases', purchase),
+  addProduct: (product) => apiPost('/products', product),
+  addSupplier: (supplier) => apiPost('/suppliers', supplier)
 };
