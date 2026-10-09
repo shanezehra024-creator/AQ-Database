@@ -1,9 +1,5 @@
 // js/api.js
-// Every function here just calls one backend endpoint and returns the
-// parsed JSON. Keeping these separate from app.js means if your API
-// path ever changes, you only fix it in one place.
-
-const API_BASE = '/api'; // same origin as the page, since Express serves both
+const API_BASE = '/api';
 
 async function apiGet(path) {
   const res = await fetch(`${API_BASE}${path}`);
