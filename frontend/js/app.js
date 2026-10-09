@@ -1,6 +1,4 @@
 // js/app.js
-// Handles: switching between the 5 pages, rendering each page's table,
-// the inventory search box, and the Add Purchase form.
 
 const pageTitleEl = document.getElementById('page-title');
 const pageContentEl = document.getElementById('page-content');
@@ -16,9 +14,8 @@ const PAGE_TITLES = {
   'add-supplier': 'Add Supplier'
 };
 
-let inventoryCache = []; // used by the search box so we don't re-fetch on every keystroke
+let inventoryCache = [];
 
-// ---------------- Navigation ----------------
 document.querySelectorAll('.nav-link').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.nav-link').forEach(b => b.classList.remove('active'));
@@ -30,7 +27,6 @@ document.querySelectorAll('.nav-link').forEach(btn => {
 function loadPage(page) {
   pageTitleEl.textContent = PAGE_TITLES[page];
   hideAlert();
-
   switch (page) {
     case 'inventory': return renderInventory();
     case 'prices': return renderPriceList();
@@ -40,9 +36,8 @@ function loadPage(page) {
     case 'add-product': return renderAddProduct();
     case 'add-supplier': return renderAddSupplier();
   }
-  }
+}
 
-// ---------------- Helpers ----------------
 function money(value) {
   const num = Number(value);
   return isNaN(num) ? '—' : num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -78,22 +73,22 @@ async function renderInventory() {
   }
 }
 
-function drawInventoryTable(rows) {
-  const tableRows = rows.map(p => {
-    const isLow = p.quantity <= p.reStockAt;
-    const badge = isLow
-      ? `<span class="badge badge-restock">RESTOCK</span>`
-      : `<span class="badge badge-ok">OK</span>`;
-    return `
-      <tr>
-        <td>${escapeHtml(p.productName)}</td>
-        <td class="right">${p.quantity}</td>
-        <td class="right">${money(p.sellingPrice)}</td>
-        <td class="right">${p.reStockAt}</td>
-        <td>${badge}</td>
-      </tr>`;
-  }).join('');
+function inventoryRowHtml(p) {
+  const isLow = p.quantity <= p.reStockAt;
+  const badge = isLow
+    ? `<span class="badge badge-restock">RESTOCK</span>`
+    : `<span class="badge badge-ok">OK</span>`;
+  return `
+    <tr>
+      <td>${escapeHtml(p.productName)}</td>
+      <td class="right">${p.quantity}</td>
+      <td class="right">${money(p.sellingPrice)}</td>
+      <td class="right">${p.reStockAt}</td>
+      <td>${badge}</td>
+    </tr>`;
+}
 
+function drawInventoryTable(rows) {
   pageContentEl.innerHTML = `
     <div class="card">
       <div class="toolbar">
@@ -110,7 +105,7 @@ function drawInventoryTable(rows) {
           </tr>
         </thead>
         <tbody id="inventory-body">
-          ${tableRows || `<tr><td colspan="5" class="empty-state">No products yet.</td></tr>`}
+          ${rows.map(inventoryRowHtml).join('') || `<tr><td colspan="5" class="empty-state">No products yet. Use "+ Add Product" to create one.</td></tr>`}
         </tbody>
       </table>
     </div>
@@ -119,20 +114,8 @@ function drawInventoryTable(rows) {
   document.getElementById('inventory-search').addEventListener('input', (e) => {
     const term = e.target.value.trim().toLowerCase();
     const filtered = inventoryCache.filter(p => p.productName.toLowerCase().includes(term));
-    document.getElementById('inventory-body').innerHTML = filtered.map(p => {
-      const isLow = p.quantity <= p.reStockAt;
-      const badge = isLow
-        ? `<span class="badge badge-restock">RESTOCK</span>`
-        : `<span class="badge badge-ok">OK</span>`;
-      return `
-        <tr>
-          <td>${escapeHtml(p.productName)}</td>
-          <td class="right">${p.quantity}</td>
-          <td class="right">${money(p.sellingPrice)}</td>
-          <td class="right">${p.reStockAt}</td>
-          <td>${badge}</td>
-        </tr>`;
-    }).join('') || `<tr><td colspan="5" class="empty-state">No matching products.</td></tr>`;
+    document.getElementById('inventory-body').innerHTML =
+      filtered.map(inventoryRowHtml).join('') || `<tr><td colspan="5" class="empty-state">No matching products.</td></tr>`;
   });
 }
 
@@ -144,9 +127,7 @@ async function renderPriceList() {
     pageContentEl.innerHTML = `
       <div class="card">
         <table>
-          <thead>
-            <tr><th>Product Name</th><th class="right">Selling Price</th></tr>
-          </thead>
+          <thead><tr><th>Product Name</th><th class="right">Selling Price</th></tr></thead>
           <tbody>
             ${rows.map(p => `
               <tr>
@@ -205,19 +186,15 @@ async function renderPurchaseHistory() {
         <table>
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Supplier</th>
-              <th>Product</th>
-              <th class="right">Quantity</th>
-              <th class="right">Cost Per Product</th>
-              <th class="right">Total</th>
+              <th>Date</th><th>Supplier</th><th>Product</th>
+              <th class="right">Quantity</th><th class="right">Cost Per Product</th><th class="right">Total</th>
             </tr>
           </thead>
           <tbody>
             ${rows.map(r => `
               <tr>
                 <td>${formatDate(r.purchaseDate)}</td>
-                <td>${escapeHtml(r.supplierName)}</td>
+                <td>${escapeHtml(r.supplierName || '—')}</td>
                 <td>${escapeHtml(r.productName)}</td>
                 <td class="right">${r.quantity}</td>
                 <td class="right">${money(r.costPerProduct)}</td>
@@ -241,6 +218,17 @@ async function renderAddPurchase() {
   try {
     const [suppliers, products] = await Promise.all([api.getSuppliers(), api.getInventory()]);
 
+    if (products.length === 0) {
+      pageContentEl.innerHTML = `
+        <div class="card">
+          <div class="empty-state">
+            You need at least one product before adding a purchase.
+            Use "Add Product" in the sidebar first.
+          </div>
+        </div>`;
+      return;
+    }
+
     productOptionsHtml = products.map(p => `<option value="${p.productID}">${escapeHtml(p.productName)}</option>`).join('');
     const supplierOptionsHtml = suppliers.map(s => `<option value="${s.supplierID}">${escapeHtml(s.supplierName)}</option>`).join('');
 
@@ -248,9 +236,9 @@ async function renderAddPurchase() {
       <div class="card">
         <div class="form-row">
           <div>
-            <label for="purchase-supplier">Supplier</label>
+            <label for="purchase-supplier">Supplier (optional)</label>
             <select id="purchase-supplier">
-              <option value="">Select a supplier…</option>
+              <option value="">No supplier</option>
               ${supplierOptionsHtml}
             </select>
           </div>
@@ -264,10 +252,7 @@ async function renderAddPurchase() {
         <div id="item-rows"></div>
         <button class="btn btn-secondary" id="add-item-row" type="button">+ Add Product</button>
 
-        <div class="total-line">
-          <span>Total:</span>
-          <span id="purchase-total">0.00</span>
-        </div>
+        <div class="total-line"><span>Total:</span><span id="purchase-total">0.00</span></div>
 
         <button class="btn btn-primary" id="save-purchase" type="button">Save Purchase</button>
       </div>
@@ -275,7 +260,7 @@ async function renderAddPurchase() {
 
     itemRowCount = 0;
     document.getElementById('item-rows').innerHTML = '';
-    addItemRow(); // start with one row
+    addItemRow();
 
     document.getElementById('add-item-row').addEventListener('click', addItemRow);
     document.getElementById('save-purchase').addEventListener('click', savePurchase);
@@ -291,26 +276,13 @@ function addItemRow() {
   row.className = 'item-row';
   row.id = rowId;
   row.innerHTML = `
-    <div>
-      <label>Product</label>
-      <select class="item-product">${productOptionsHtml}</select>
-    </div>
-    <div>
-      <label>Quantity</label>
-      <input type="number" class="item-quantity" min="1" value="1">
-    </div>
-    <div>
-      <label>Cost Per Product</label>
-      <input type="number" class="item-cost" min="0" step="0.01" value="0">
-    </div>
-    <div>
-      <button class="btn btn-remove" type="button" onclick="document.getElementById('${rowId}').remove(); updateTotal();">Remove</button>
-    </div>
+    <div><label>Product</label><select class="item-product">${productOptionsHtml}</select></div>
+    <div><label>Quantity</label><input type="number" class="item-quantity" min="1" value="1"></div>
+    <div><label>Cost Per Product</label><input type="number" class="item-cost" min="0" step="0.01" value="0"></div>
+    <div><button class="btn btn-remove" type="button" onclick="document.getElementById('${rowId}').remove(); updateTotal();">Remove</button></div>
   `;
   document.getElementById('item-rows').appendChild(row);
-  row.querySelectorAll('.item-quantity, .item-cost').forEach(input => {
-    input.addEventListener('input', updateTotal);
-  });
+  row.querySelectorAll('.item-quantity, .item-cost').forEach(input => input.addEventListener('input', updateTotal));
   updateTotal();
 }
 
@@ -328,8 +300,8 @@ async function savePurchase() {
   const supplierID = document.getElementById('purchase-supplier').value;
   const purchaseDate = document.getElementById('purchase-date').value;
 
-  if (!supplierID || !purchaseDate) {
-    showAlert('Please select a supplier and a date.', 'error');
+  if (!purchaseDate) {
+    showAlert('Please pick a date.', 'error');
     return;
   }
 
@@ -348,13 +320,14 @@ async function savePurchase() {
   }
 
   try {
-    await api.addPurchase({ supplierID: Number(supplierID), purchaseDate, items });
+    await api.addPurchase({ supplierID: supplierID ? Number(supplierID) : null, purchaseDate, items });
     showAlert('Purchase saved. Stock quantities have been updated.', 'success');
-    renderAddPurchase(); // reset the form
+    renderAddPurchase();
   } catch (err) {
     showAlert("Couldn't save the purchase. Check the backend logs.", 'error');
   }
 }
+
 // ---------------- Page 6: Add Product ----------------
 function renderAddProduct() {
   pageContentEl.innerHTML = `
@@ -397,7 +370,7 @@ function renderAddProduct() {
     try {
       await api.addProduct({ productName, quantity, sellingPrice, reStockAt });
       showAlert(`"${productName}" added.`, 'success');
-      renderAddProduct();
+      renderAddProduct(); // reset the form
     } catch (err) {
       showAlert("Couldn't save the product. Check the backend logs.", 'error');
     }
@@ -434,19 +407,17 @@ function renderAddSupplier() {
     try {
       await api.addSupplier({ supplierName, supplierPhone });
       showAlert(`"${supplierName}" added.`, 'success');
-      renderAddSupplier();
+      renderAddSupplier(); // reset the form
     } catch (err) {
       showAlert("Couldn't save the supplier. Check the backend logs.", 'error');
     }
   });
 }
 
-// ---------------- Small utility ----------------
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str ?? '';
   return div.innerHTML;
 }
 
-// ---------------- Start on page load ----------------
 loadPage('inventory');
