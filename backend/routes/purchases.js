@@ -4,7 +4,6 @@ const router = express.Router();
 const { pool } = require('../db');
 
 // GET /api/purchases — Page 4: PURCHASE HISTORY
-// Built live by joining purchase + purchaseitems + supplier + product.
 router.get('/', async (req, res) => {
   try {
     const result = await pool.query(`
@@ -29,16 +28,11 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/purchases — Page 5: ADD PURCHASE
-// Same body shape as before:
-// { supplierID, purchaseDate, items: [{ productID, quantity, costPerProduct }] }
-//
-// Runs as one transaction: insert the purchase header, insert each line
-// item, and your stock_increase trigger fires automatically for each one.
 router.post('/', async (req, res) => {
   const { supplierID, purchaseDate, items } = req.body;
 
   if (!purchaseDate || !Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({ error: 'purchaseDate, and at least one item are required' });
+    return res.status(400).json({ error: 'purchaseDate and at least one item are required' });
   }
 
   const totalPrice = items.reduce((sum, item) => sum + item.quantity * item.costPerProduct, 0);
@@ -51,7 +45,7 @@ router.post('/', async (req, res) => {
       `INSERT INTO purchase (purchasedate, supplierid, totalprice)
        VALUES ($1, $2, $3)
        RETURNING purchaseid`,
-       [purchaseDate, supplierID || null, totalPrice]
+      [purchaseDate, supplierID || null, totalPrice]
     );
     const purchaseID = purchaseResult.rows[0].purchaseid;
 
