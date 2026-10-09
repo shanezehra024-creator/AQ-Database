@@ -16,7 +16,7 @@ router.get('/', async (req, res) => {
         pi.costperproduct AS "costPerProduct",
         (pi.quantity * pi.costperproduct) AS "totalCost"
       FROM purchase pu
-      JOIN supplier s ON pu.supplierid = s.supplierid
+      LEFT JOIN supplier s ON pu.supplierid = s.supplierid
       JOIN purchaseitems pi ON pu.purchaseid = pi.purchaseid
       JOIN product pr ON pi.productid = pr.productid
       ORDER BY pu.purchasedate DESC, pu.purchaseid DESC
@@ -37,8 +37,8 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   const { supplierID, purchaseDate, items } = req.body;
 
-  if (!supplierID || !purchaseDate || !Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({ error: 'supplierID, purchaseDate, and at least one item are required' });
+  if (!purchaseDate || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'purchaseDate, and at least one item are required' });
   }
 
   const totalPrice = items.reduce((sum, item) => sum + item.quantity * item.costPerProduct, 0);
@@ -51,7 +51,7 @@ router.post('/', async (req, res) => {
       `INSERT INTO purchase (purchasedate, supplierid, totalprice)
        VALUES ($1, $2, $3)
        RETURNING purchaseid`,
-      [purchaseDate, supplierID, totalPrice]
+       [purchaseDate, supplierID || null, totalPrice]
     );
     const purchaseID = purchaseResult.rows[0].purchaseid;
 
