@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Spare Parts - Inventory Manager</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563EB'/%3E%3Ctext x='16' y='21' font-family='Arial' font-size='13' font-weight='700' text-anchor='middle' fill='white'%3ESP%3C/text%3E%3C/svg%3E">
+<title>Al Qaim Spare Parts</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563EB'/%3E%3Ctext x='16' y='21' font-family='Arial' font-size='13' font-weight='700' text-anchor='middle' fill='white'%3EAQ%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -12,14 +12,27 @@
 </head>
 <body>
 
+<div class="intro" id="intro" role="presentation">
+  <div class="gears" aria-hidden="true">
+    <svg class="gear big" viewBox="-40 -40 80 80"><circle r="30" fill="none" stroke="currentColor" stroke-width="10" stroke-dasharray="7.854 7.854"/><circle r="24" fill="none" stroke="currentColor" stroke-width="4"/><circle r="7" fill="currentColor"/></svg>
+    <svg class="gear small" viewBox="-40 -40 80 80"><circle r="30" fill="none" stroke="currentColor" stroke-width="10" stroke-dasharray="5.89 5.89"/><circle r="24" fill="none" stroke="currentColor" stroke-width="4"/><circle r="7" fill="currentColor"/></svg>
+  </div>
+  <div class="intro-title intro-word">Al Qaim</div>
+  <div class="intro-sub intro-word">Spare Parts</div>
+  <div class="intro-tag">Inventory manager</div>
+  <div class="intro-bar"><i></i></div>
+  <div class="intro-skip">Click anywhere to skip</div>
+</div>
+
+
 <div class="layout">
 
   <aside class="sidebar">
     <div class="brand">
-      <span class="brand-mark">SP</span>
+      <span class="brand-mark">AQ</span>
       <span>
-        <span class="brand-name">Spare Parts</span>
-        <span class="brand-sub">Inventory manager</span>
+        <span class="brand-name">Al Qaim</span>
+        <span class="brand-sub">Spare Parts</span>
       </span>
     </div>
     <nav class="nav">
@@ -69,5 +82,34 @@
 
 <script src="js/api.js"></script>
 <script src="js/app.js"></script>
+<script>
+(function () {
+  var o = document.getElementById('intro');
+  if (!o) return;
+  var seen = false;
+  try { seen = sessionStorage.getItem('introSeen'); } catch (e) {}
+  if (seen || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) { o.remove(); return; }
+  document.querySelectorAll('.intro-word').forEach(function (w, wi) {
+    var t = w.textContent;
+    w.textContent = '';
+    t.split('').forEach(function (c, i) {
+      var s = document.createElement('span');
+      s.textContent = c === ' ' ? '\u00A0' : c;
+      s.style.animationDelay = (0.5 + wi * 0.5 + i * 0.05) + 's';
+      w.appendChild(s);
+    });
+  });
+  var finished = false;
+  function done() {
+    if (finished) return;
+    finished = true;
+    o.classList.add('out');
+    try { sessionStorage.setItem('introSeen', '1'); } catch (e) {}
+    setTimeout(function () { o.remove(); }, 700);
+  }
+  o.addEventListener('click', done);
+  setTimeout(done, 3200);
+})();
+</script>
 </body>
 </html>
