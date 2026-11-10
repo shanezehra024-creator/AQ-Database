@@ -2,6 +2,7 @@
 // Pages, tables, pop-up forms (edit / delete), and the add forms.
 
 const pageTitleEl = document.getElementById('page-title');
+const pageSubEl = document.getElementById('page-sub');
 const pageContentEl = document.getElementById('page-content');
 const alertBox = document.getElementById('alert-box');
 
@@ -12,13 +13,13 @@ let supplierCache = [];
 let alertTimer;
 
 const PAGES = {
-  inventory: ['Inventory', renderInventory],
-  prices: ['Price List', renderPriceList],
-  detailed: ['Detailed Inventory', renderDetailedInventory],
-  history: ['Purchase History', renderPurchaseHistory],
-  'add-purchase': ['Add Purchase', renderAddPurchase],
-  'add-product': ['Add Product', renderAddProduct],
-  suppliers: ['Suppliers', renderSuppliers]
+  inventory: ['Inventory', renderInventory, 'Everything in stock, at a glance'],
+  prices: ['Price List', renderPriceList, 'What each product sells for'],
+  detailed: ['Detailed Inventory', renderDetailedInventory, 'Selling price next to your latest cost'],
+  history: ['Purchase History', renderPurchaseHistory, 'Everything you’ve bought from suppliers'],
+  'add-purchase': ['Add Purchase', renderAddPurchase, 'Record new stock coming in'],
+  'add-product': ['Add Product', renderAddProduct, 'Create a new product to sell'],
+  suppliers: ['Suppliers', renderSuppliers, 'The people you buy from']
 };
 
 // ---------------- Navigation ----------------
@@ -33,6 +34,7 @@ document.querySelectorAll('.nav-link').forEach(btn => {
 function loadPage(page) {
   currentPage = page;
   pageTitleEl.textContent = PAGES[page][0];
+  pageSubEl.textContent = PAGES[page][2] || '';
   hideAlert();
   PAGES[page][1]();
 }
@@ -274,7 +276,15 @@ async function renderInventory() {
   } catch (err) {
     return showError("Couldn't load inventory. Is the backend running?");
   }
-  pageContentEl.innerHTML = card(
+  const lowCount = inventoryCache.filter(p => p.quantity <= p.reStockAt).length;
+  const stockValue = inventoryCache.reduce((sum, p) => sum + p.quantity * Number(p.sellingPrice), 0);
+  const stat = (label, value, cls = '') =>
+    `<div class="stat"><div class="stat-label">${label}</div><div class="stat-value ${cls}">${value}</div></div>`;
+  const statsHtml = '<div class="stats">' +
+    stat('Products', inventoryCache.length) +
+    stat('Needs restock', lowCount, lowCount ? 'warn' : '') +
+    stat('Stock value (at selling price)', money(stockValue)) + '</div>';
+  pageContentEl.innerHTML = statsHtml + card(
     '<div class="toolbar"><input type="text" id="inventory-search" class="search-input" placeholder="Search by product name…"></div>' +
     table(['Product Name', '>Quantity', '>Selling Price', '>Restock At', 'Status', '>'],
       inventoryRows(inventoryCache), 'No products yet. Use "Add Product" to create your first one.', 'inventory-body')
