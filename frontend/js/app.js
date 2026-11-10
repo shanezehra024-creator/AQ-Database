@@ -1,21 +1,27 @@
 // js/app.js
+// Pages, tables, pop-up forms (edit / delete), and the add forms.
 
 const pageTitleEl = document.getElementById('page-title');
 const pageContentEl = document.getElementById('page-content');
 const alertBox = document.getElementById('alert-box');
 
-const PAGE_TITLES = {
-  inventory: 'Inventory',
-  prices: 'Price List',
-  detailed: 'Detailed Inventory',
-  history: 'Purchase History',
-  'add-purchase': 'Add Purchase',
-  'add-product': 'Add Product',
-  'add-supplier': 'Add Supplier'
+let currentPage = 'inventory';
+let inventoryCache = [];
+let historyCache = [];
+let supplierCache = [];
+let alertTimer;
+
+const PAGES = {
+  inventory: ['Inventory', renderInventory],
+  prices: ['Price List', renderPriceList],
+  detailed: ['Detailed Inventory', renderDetailedInventory],
+  history: ['Purchase History', renderPurchaseHistory],
+  'add-purchase': ['Add Purchase', renderAddPurchase],
+  'add-product': ['Add Product', renderAddProduct],
+  suppliers: ['Suppliers', renderSuppliers]
 };
 
-let inventoryCache = [];
-
+// ---------------- Navigation ----------------
 document.querySelectorAll('.nav-link').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.nav-link').forEach(b => b.classList.remove('active'));
@@ -25,191 +31,322 @@ document.querySelectorAll('.nav-link').forEach(btn => {
 });
 
 function loadPage(page) {
-  pageTitleEl.textContent = PAGE_TITLES[page];
+  currentPage = page;
+  pageTitleEl.textContent = PAGES[page][0];
   hideAlert();
-  switch (page) {
-    case 'inventory': return renderInventory();
-    case 'prices': return renderPriceList();
-    case 'detailed': return renderDetailedInventory();
-    case 'history': return renderPurchaseHistory();
-    case 'add-purchase': return renderAddPurchase();
-    case 'add-product': return renderAddProduct();
-    case 'add-supplier': return renderAddSupplier();
-  }
+  PAGES[page][1]();
 }
 
-function money(value) {
-  const num = Number(value);
-  return isNaN(num) ? '—' : num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// ---------------- Helpers ----------------
+const esc = (s) => {
+  const d = document.createElement('div');
+  d.textContent = s ?? '';
+  return d.innerHTML;
+};
+const attr = (s) => esc(s).replace(/"/g, '&quot;');
+
+function money(v) {
+  const n = Number(v);
+  return isNaN(n) ? '—' : n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function formatDate(value) {
-  if (!value) return '—';
-  const d = new Date(value);
+function formatDate(v) {
+  if (!v) return '—';
+  const d = new Date(`${String(v).slice(0, 10)}T00:00:00`);
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 function showLoading() {
-  pageContentEl.innerHTML = `<div class="card"><div class="loading-state">Loading…</div></div>`;
+  pageContentEl.innerHTML = '<div class="card"><div class="loading-state">Loading…</div></div>';
+}
+
+function showError(msg) {
+  pageContentEl.innerHTML = `<div class="card"><div class="empty-state">${esc(msg)}</div></div>`;
 }
 
 function showAlert(message, type = 'success') {
+  clearTimeout(alertTimer);
   alertBox.textContent = message;
   alertBox.className = `alert-box ${type}`;
+  alertTimer = setTimeout(hideAlert, 5000);
 }
 
 function hideAlert() {
   alertBox.className = 'alert-box hidden';
 }
 
-// ---------------- Page 1: Inventory ----------------
+const card = (inner) => `<div class="card">${inner}</div>`;
+
+// cols: strings; start with ">" for a right-aligned column
+function table(cols, rows, empty, bodyId = '') {
+  const head = cols.map(c => c.startsWith('>') ? `<th class="right">${c.slice(1)}</th>` : `<th>${c}</th>`).join('');
+  const body = rows || `<tr><td colspan="${cols.length}" class="empty-state">${empty}</td></tr>`;
+  return `<div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody${bodyId ? ` id="${bodyId}"` : ''}>${body}</tbody></table></div>`;
+}
+
+const field = (label, id, value = '', type = 'text', extra = '') =>
+  `<div class="field"><label for="${id}">${label}</label><input id="${id}" type="${type}" value="${attr(value)}" ${extra}></div>`;
+
+const actions = (kind, id) =>
+  `<td class="actions"><button class="btn-link" data-act="edit" data-kind="${kind}" data-id="${id}">Edit</button>` +
+  `<button class="btn-link danger" data-act="delete" data-kind="${kind}" data-id="${id}">Delete</button></td>`;
+
+// ---------------- Pop-up (modal) ----------------
+function openModal({ title, body, saveLabel = 'Save', danger = false, onSave, success }) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <h3>${esc(title)}</h3>
+      <div>${body}</div>
+      <div class="modal-error hidden"></div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" data-close type="button">Cancel</button>
+        <button class="btn ${danger ? 'btn-danger' : 'btn-primary'}" data-save type="button">${saveLabel}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay || e.target.hasAttribute('data-close')) close();
+  });
+  overlay.querySelector('[data-save]').addEventListener('click', async () => {
+    const errBox = overlay.querySelector('.modal-error');
+    errBox.classList.add('hidden');
+    try {
+      await onSave(overlay);
+      close();
+      loadPage(currentPage);
+      if (success) showAlert(success);
+    } catch (err) {
+      errBox.textContent = err.message;
+      errBox.classList.remove('hidden');
+    }
+  });
+  const first = overlay.querySelector('input, select');
+  if (first) first.focus();
+}
+
+function confirmDelete(title, text, action, success) {
+  openModal({
+    title,
+    body: `<p class="modal-text">${esc(text)}</p>`,
+    saveLabel: 'Delete',
+    danger: true,
+    onSave: action,
+    success
+  });
+}
+
+// One click listener handles every Edit / Delete button on every page
+pageContentEl.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-act]');
+  if (!b) return;
+  const { act, kind, id } = b.dataset;
+  const handlers = { product: productAction, supplier: supplierAction, purchase: purchaseAction };
+  handlers[kind](act, Number(id));
+});
+
+// ---------------- Product edit / delete ----------------
+async function productAction(act, id) {
+  let p;
+  try {
+    p = (await api.getInventory()).find(x => x.productID === id);
+  } catch (err) {
+    return showAlert(err.message, 'error');
+  }
+  if (!p) return showAlert('That product no longer exists.', 'error');
+
+  if (act === 'delete') {
+    return confirmDelete(
+      `Delete "${p.productName}"?`,
+      "This can't be undone. A product that already has purchase history can't be deleted.",
+      () => api.deleteProduct(id),
+      `"${p.productName}" deleted.`
+    );
+  }
+
+  openModal({
+    title: 'Edit Product',
+    body:
+      field('Product Name', 'm-name', p.productName) +
+      field('Quantity in stock', 'm-qty', p.quantity, 'number', 'min="0"') +
+      field('Selling Price', 'm-price', p.sellingPrice, 'number', 'min="0" step="0.01"') +
+      field('Restock At', 'm-restock', p.reStockAt, 'number', 'min="0"'),
+    onSave: async (m) => {
+      const v = (i) => m.querySelector('#' + i).value.trim();
+      const price = Number(v('m-price'));
+      if (!v('m-name') || v('m-price') === '' || isNaN(price)) throw new Error('Name and selling price are required.');
+      await api.updateProduct(id, {
+        productName: v('m-name'),
+        quantity: Number(v('m-qty')) || 0,
+        sellingPrice: price,
+        reStockAt: Number(v('m-restock')) || 0
+      });
+    },
+    success: 'Product updated.'
+  });
+}
+
+// ---------------- Supplier edit / delete ----------------
+function supplierAction(act, id) {
+  const s = supplierCache.find(x => x.supplierID === id);
+  if (!s) return;
+
+  if (act === 'delete') {
+    return confirmDelete(
+      `Delete "${s.supplierName}"?`,
+      'Their past purchases stay in your history, but will show no supplier.',
+      () => api.deleteSupplier(id),
+      `"${s.supplierName}" deleted.`
+    );
+  }
+
+  openModal({
+    title: 'Edit Supplier',
+    body: field('Supplier Name', 'm-sname', s.supplierName) + field('Phone Number (optional)', 'm-sphone', s.supplierPhone || ''),
+    onSave: async (m) => {
+      const name = m.querySelector('#m-sname').value.trim();
+      if (!name) throw new Error('Supplier name is required.');
+      await api.updateSupplier(id, { supplierName: name, supplierPhone: m.querySelector('#m-sphone').value.trim() });
+    },
+    success: 'Supplier updated.'
+  });
+}
+
+// ---------------- Purchase edit / delete ----------------
+async function purchaseAction(act, id) {
+  const r = historyCache.find(x => x.purchaseID === id);
+  if (!r) return;
+
+  if (act === 'delete') {
+    return confirmDelete(
+      `Delete purchase #${id}?`,
+      "All items in this purchase are removed, and the stock they added is taken back off your inventory. This can't be undone.",
+      () => api.deletePurchase(id),
+      `Purchase #${id} deleted.`
+    );
+  }
+
+  let suppliers;
+  try {
+    suppliers = await api.getSuppliers();
+  } catch (err) {
+    return showAlert(err.message, 'error');
+  }
+  const opts = '<option value="">No supplier</option>' +
+    suppliers.map(s => `<option value="${s.supplierID}"${s.supplierID === r.supplierID ? ' selected' : ''}>${esc(s.supplierName)}</option>`).join('');
+
+  openModal({
+    title: `Edit Purchase #${id}`,
+    body: `<div class="field"><label for="m-supplier">Supplier (optional)</label><select id="m-supplier">${opts}</select></div>` +
+          field('Purchase Date', 'm-date', r.purchaseDate, 'date'),
+    onSave: async (m) => {
+      const date = m.querySelector('#m-date').value;
+      if (!date) throw new Error('Please pick a date.');
+      const sup = m.querySelector('#m-supplier').value;
+      await api.updatePurchase(id, { supplierID: sup ? Number(sup) : null, purchaseDate: date });
+    },
+    success: 'Purchase updated.'
+  });
+}
+
+// ---------------- Page: Inventory ----------------
+const statusBadge = (p) => p.quantity <= p.reStockAt
+  ? '<span class="badge badge-restock">RESTOCK</span>'
+  : '<span class="badge badge-ok">OK</span>';
+
+const inventoryRows = (list) => list.map(p => `
+  <tr>
+    <td>${esc(p.productName)}</td>
+    <td class="right">${p.quantity}</td>
+    <td class="right">${money(p.sellingPrice)}</td>
+    <td class="right">${p.reStockAt}</td>
+    <td>${statusBadge(p)}</td>
+    ${actions('product', p.productID)}
+  </tr>`).join('');
+
 async function renderInventory() {
   showLoading();
   try {
     inventoryCache = await api.getInventory();
-    drawInventoryTable(inventoryCache);
   } catch (err) {
-    pageContentEl.innerHTML = `<div class="card"><div class="empty-state">Couldn't load inventory. Is the backend running?</div></div>`;
+    return showError("Couldn't load inventory. Is the backend running?");
   }
-}
-
-function inventoryRowHtml(p) {
-  const isLow = p.quantity <= p.reStockAt;
-  const badge = isLow
-    ? `<span class="badge badge-restock">RESTOCK</span>`
-    : `<span class="badge badge-ok">OK</span>`;
-  return `
-    <tr>
-      <td>${escapeHtml(p.productName)}</td>
-      <td class="right">${p.quantity}</td>
-      <td class="right">${money(p.sellingPrice)}</td>
-      <td class="right">${p.reStockAt}</td>
-      <td>${badge}</td>
-    </tr>`;
-}
-
-function drawInventoryTable(rows) {
-  pageContentEl.innerHTML = `
-    <div class="card">
-      <div class="toolbar">
-        <input type="text" id="inventory-search" class="search-input" placeholder="Search by product name…">
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th>Product Name</th>
-            <th class="right">Quantity</th>
-            <th class="right">Selling Price</th>
-            <th class="right">Restock At</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody id="inventory-body">
-          ${rows.map(inventoryRowHtml).join('') || `<tr><td colspan="5" class="empty-state">No products yet. Use "+ Add Product" to create one.</td></tr>`}
-        </tbody>
-      </table>
-    </div>
-  `;
-
+  pageContentEl.innerHTML = card(
+    '<div class="toolbar"><input type="text" id="inventory-search" class="search-input" placeholder="Search by product name…"></div>' +
+    table(['Product Name', '>Quantity', '>Selling Price', '>Restock At', 'Status', '>'],
+      inventoryRows(inventoryCache), 'No products yet. Use "Add Product" to create your first one.', 'inventory-body')
+  );
   document.getElementById('inventory-search').addEventListener('input', (e) => {
     const term = e.target.value.trim().toLowerCase();
-    const filtered = inventoryCache.filter(p => p.productName.toLowerCase().includes(term));
+    const list = inventoryCache.filter(p => p.productName.toLowerCase().includes(term));
     document.getElementById('inventory-body').innerHTML =
-      filtered.map(inventoryRowHtml).join('') || `<tr><td colspan="5" class="empty-state">No matching products.</td></tr>`;
+      inventoryRows(list) || '<tr><td colspan="6" class="empty-state">No matching products.</td></tr>';
   });
 }
 
-// ---------------- Page 2: Price List ----------------
+// ---------------- Page: Price List ----------------
 async function renderPriceList() {
   showLoading();
   try {
     const rows = await api.getPriceList();
-    pageContentEl.innerHTML = `
-      <div class="card">
-        <table>
-          <thead><tr><th>Product Name</th><th class="right">Selling Price</th></tr></thead>
-          <tbody>
-            ${rows.map(p => `
-              <tr>
-                <td>${escapeHtml(p.productName)}</td>
-                <td class="right">${money(p.sellingPrice)}</td>
-              </tr>`).join('') || `<tr><td colspan="2" class="empty-state">No products yet.</td></tr>`}
-          </tbody>
-        </table>
-      </div>
-    `;
+    pageContentEl.innerHTML = card(table(['Product Name', '>Selling Price', '>'],
+      rows.map(p => `<tr><td>${esc(p.productName)}</td><td class="right">${money(p.sellingPrice)}</td>${actions('product', p.productID)}</tr>`).join(''),
+      'No products yet.'));
   } catch (err) {
-    pageContentEl.innerHTML = `<div class="card"><div class="empty-state">Couldn't load the price list.</div></div>`;
+    showError("Couldn't load the price list.");
   }
 }
 
-// ---------------- Page 3: Detailed Inventory ----------------
+// ---------------- Page: Detailed Inventory ----------------
 async function renderDetailedInventory() {
   showLoading();
   try {
     const rows = await api.getDetailedInventory();
-    pageContentEl.innerHTML = `
-      <div class="card">
-        <table>
-          <thead>
-            <tr>
-              <th>Product Name</th>
-              <th class="right">Selling Price</th>
-              <th class="right">Latest Cost Price</th>
-              <th class="right">Quantity</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows.map(p => `
-              <tr>
-                <td>${escapeHtml(p.productName)}</td>
-                <td class="right">${money(p.sellingPrice)}</td>
-                <td class="right">${p.latestCost != null ? money(p.latestCost) : '—'}</td>
-                <td class="right">${p.quantity}</td>
-              </tr>`).join('') || `<tr><td colspan="4" class="empty-state">No products yet.</td></tr>`}
-          </tbody>
-        </table>
-      </div>
-    `;
+    pageContentEl.innerHTML = card(table(['Product Name', '>Selling Price', '>Latest Cost Price', '>Quantity', '>'],
+      rows.map(p => `
+        <tr>
+          <td>${esc(p.productName)}</td>
+          <td class="right">${money(p.sellingPrice)}</td>
+          <td class="right">${p.latestCost != null ? money(p.latestCost) : '—'}</td>
+          <td class="right">${p.quantity}</td>
+          ${actions('product', p.productID)}
+        </tr>`).join(''),
+      'No products yet.'));
   } catch (err) {
-    pageContentEl.innerHTML = `<div class="card"><div class="empty-state">Couldn't load detailed inventory.</div></div>`;
+    showError("Couldn't load detailed inventory.");
   }
 }
 
-// ---------------- Page 4: Purchase History ----------------
+// ---------------- Page: Purchase History ----------------
 async function renderPurchaseHistory() {
   showLoading();
   try {
-    const rows = await api.getPurchaseHistory();
-    pageContentEl.innerHTML = `
-      <div class="card">
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th><th>Supplier</th><th>Product</th>
-              <th class="right">Quantity</th><th class="right">Cost Per Product</th><th class="right">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows.map(r => `
-              <tr>
-                <td>${formatDate(r.purchaseDate)}</td>
-                <td>${escapeHtml(r.supplierName || '—')}</td>
-                <td>${escapeHtml(r.productName)}</td>
-                <td class="right">${r.quantity}</td>
-                <td class="right">${money(r.costPerProduct)}</td>
-                <td class="right">${money(r.totalCost)}</td>
-              </tr>`).join('') || `<tr><td colspan="6" class="empty-state">No purchases recorded yet.</td></tr>`}
-          </tbody>
-        </table>
-      </div>
-    `;
+    historyCache = await api.getPurchaseHistory();
+    pageContentEl.innerHTML = card(
+      table(['Purchase', 'Date', 'Supplier', 'Product', '>Quantity', '>Cost Per Product', '>Total', '>'],
+        historyCache.map(r => `
+          <tr>
+            <td>#${r.purchaseID}</td>
+            <td>${formatDate(r.purchaseDate)}</td>
+            <td>${esc(r.supplierName || '—')}</td>
+            <td>${esc(r.productName)}</td>
+            <td class="right">${r.quantity}</td>
+            <td class="right">${money(r.costPerProduct)}</td>
+            <td class="right">${money(r.totalCost)}</td>
+            ${actions('purchase', r.purchaseID)}
+          </tr>`).join(''),
+        'No purchases recorded yet.') +
+      '<p class="hint">Edit changes a purchase\'s date and supplier. Delete removes the whole purchase and takes its stock back off your inventory.</p>'
+    );
   } catch (err) {
-    pageContentEl.innerHTML = `<div class="card"><div class="empty-state">Couldn't load purchase history.</div></div>`;
+    showError("Couldn't load purchase history.");
   }
 }
 
-// ---------------- Page 5: Add Purchase ----------------
+// ---------------- Page: Add Purchase ----------------
 let itemRowCount = 0;
 let productOptionsHtml = '';
 
@@ -217,81 +354,54 @@ async function renderAddPurchase() {
   showLoading();
   try {
     const [suppliers, products] = await Promise.all([api.getSuppliers(), api.getInventory()]);
-
     if (products.length === 0) {
-      pageContentEl.innerHTML = `
-        <div class="card">
-          <div class="empty-state">
-            You need at least one product before adding a purchase.
-            Use "Add Product" in the sidebar first.
-          </div>
-        </div>`;
-      return;
+      return showError('You need at least one product before adding a purchase. Use "Add Product" first.');
     }
+    productOptionsHtml = products.map(p => `<option value="${p.productID}">${esc(p.productName)}</option>`).join('');
+    const supplierOptions = suppliers.map(s => `<option value="${s.supplierID}">${esc(s.supplierName)}</option>`).join('');
 
-    productOptionsHtml = products.map(p => `<option value="${p.productID}">${escapeHtml(p.productName)}</option>`).join('');
-    const supplierOptionsHtml = suppliers.map(s => `<option value="${s.supplierID}">${escapeHtml(s.supplierName)}</option>`).join('');
-
-    pageContentEl.innerHTML = `
-      <div class="card">
-        <div class="form-row">
-          <div>
-            <label for="purchase-supplier">Supplier (optional)</label>
-            <select id="purchase-supplier">
-              <option value="">No supplier</option>
-              ${supplierOptionsHtml}
-            </select>
-          </div>
-          <div>
-            <label for="purchase-date">Purchase Date</label>
-            <input type="date" id="purchase-date" value="${new Date().toISOString().slice(0, 10)}">
-          </div>
+    pageContentEl.innerHTML = card(`
+      <div class="form-row">
+        <div>
+          <label for="purchase-supplier">Supplier (optional)</label>
+          <select id="purchase-supplier"><option value="">No supplier</option>${supplierOptions}</select>
         </div>
-
-        <label>Items Purchased</label>
-        <div id="item-rows"></div>
-        <button class="btn btn-secondary" id="add-item-row" type="button">+ Add Product</button>
-
-        <div class="total-line"><span>Total:</span><span id="purchase-total">0.00</span></div>
-
-        <button class="btn btn-primary" id="save-purchase" type="button">Save Purchase</button>
+        ${field('Purchase Date', 'purchase-date', new Date().toISOString().slice(0, 10), 'date')}
       </div>
-    `;
+      <label>Items Purchased</label>
+      <div id="item-rows"></div>
+      <button class="btn btn-secondary" id="add-item-row" type="button">+ Add Product</button>
+      <div class="total-line"><span>Total:</span><span id="purchase-total">0.00</span></div>
+      <button class="btn btn-primary" id="save-purchase" type="button">Save Purchase</button>`);
 
     itemRowCount = 0;
-    document.getElementById('item-rows').innerHTML = '';
     addItemRow();
-
     document.getElementById('add-item-row').addEventListener('click', addItemRow);
     document.getElementById('save-purchase').addEventListener('click', savePurchase);
   } catch (err) {
-    pageContentEl.innerHTML = `<div class="card"><div class="empty-state">Couldn't load the form. Is the backend running?</div></div>`;
+    showError("Couldn't load the form. Is the backend running?");
   }
 }
 
 function addItemRow() {
   itemRowCount++;
-  const rowId = `item-${itemRowCount}`;
   const row = document.createElement('div');
   row.className = 'item-row';
-  row.id = rowId;
   row.innerHTML = `
     <div><label>Product</label><select class="item-product">${productOptionsHtml}</select></div>
     <div><label>Quantity</label><input type="number" class="item-quantity" min="1" value="1"></div>
     <div><label>Cost Per Product</label><input type="number" class="item-cost" min="0" step="0.01" value="0"></div>
-    <div><button class="btn btn-remove" type="button" onclick="document.getElementById('${rowId}').remove(); updateTotal();">Remove</button></div>
-  `;
+    <div><button class="btn btn-remove" type="button">Remove</button></div>`;
   document.getElementById('item-rows').appendChild(row);
-  row.querySelectorAll('.item-quantity, .item-cost').forEach(input => input.addEventListener('input', updateTotal));
+  row.querySelectorAll('.item-quantity, .item-cost').forEach(i => i.addEventListener('input', updateTotal));
+  row.querySelector('.btn-remove').addEventListener('click', () => { row.remove(); updateTotal(); });
   updateTotal();
 }
 
 function updateTotal() {
   let total = 0;
   document.querySelectorAll('.item-row').forEach(row => {
-    const qty = Number(row.querySelector('.item-quantity').value) || 0;
-    const cost = Number(row.querySelector('.item-cost').value) || 0;
-    total += qty * cost;
+    total += (Number(row.querySelector('.item-quantity').value) || 0) * (Number(row.querySelector('.item-cost').value) || 0);
   });
   document.getElementById('purchase-total').textContent = money(total);
 }
@@ -299,125 +409,92 @@ function updateTotal() {
 async function savePurchase() {
   const supplierID = document.getElementById('purchase-supplier').value;
   const purchaseDate = document.getElementById('purchase-date').value;
+  if (!purchaseDate) return showAlert('Please pick a date.', 'error');
 
-  if (!purchaseDate) {
-    showAlert('Please pick a date.', 'error');
-    return;
-  }
-
-  const items = [];
-  document.querySelectorAll('.item-row').forEach(row => {
-    items.push({
-      productID: Number(row.querySelector('.item-product').value),
-      quantity: Number(row.querySelector('.item-quantity').value),
-      costPerProduct: Number(row.querySelector('.item-cost').value)
-    });
-  });
-
+  const items = [...document.querySelectorAll('.item-row')].map(row => ({
+    productID: Number(row.querySelector('.item-product').value),
+    quantity: Number(row.querySelector('.item-quantity').value),
+    costPerProduct: Number(row.querySelector('.item-cost').value)
+  }));
   if (items.length === 0 || items.some(i => !i.productID || i.quantity <= 0)) {
-    showAlert('Every item needs a product and a quantity greater than 0.', 'error');
-    return;
+    return showAlert('Every item needs a product and a quantity greater than 0.', 'error');
   }
 
   try {
     await api.addPurchase({ supplierID: supplierID ? Number(supplierID) : null, purchaseDate, items });
-    showAlert('Purchase saved. Stock quantities have been updated.', 'success');
     renderAddPurchase();
+    showAlert('Purchase saved. Stock quantities have been updated.');
   } catch (err) {
-    showAlert("Couldn't save the purchase. Check the backend logs.", 'error');
+    showAlert(err.message, 'error');
   }
 }
 
-// ---------------- Page 6: Add Product ----------------
+// ---------------- Page: Add Product ----------------
 function renderAddProduct() {
-  pageContentEl.innerHTML = `
-    <div class="card">
-      <div class="form-row">
-        <div>
-          <label for="new-product-name">Product Name</label>
-          <input type="text" id="new-product-name" placeholder="e.g. Brake Pad">
-        </div>
-        <div>
-          <label for="new-product-quantity">Starting Quantity</label>
-          <input type="number" id="new-product-quantity" min="0" value="0">
-        </div>
-      </div>
-      <div class="form-row">
-        <div>
-          <label for="new-product-price">Selling Price</label>
-          <input type="number" id="new-product-price" min="0" step="0.01" placeholder="0.00">
-        </div>
-        <div>
-          <label for="new-product-restock">Restock At</label>
-          <input type="number" id="new-product-restock" min="0" placeholder="e.g. 5">
-        </div>
-      </div>
-      <button class="btn btn-primary" id="save-product" type="button">Save Product</button>
+  pageContentEl.innerHTML = card(`
+    <div class="form-row">
+      ${field('Product Name', 'new-product-name', '', 'text', 'placeholder="e.g. Brake Pad"')}
+      ${field('Starting Quantity', 'new-product-quantity', 0, 'number', 'min="0"')}
     </div>
-  `;
+    <div class="form-row">
+      ${field('Selling Price', 'new-product-price', '', 'number', 'min="0" step="0.01" placeholder="0.00"')}
+      ${field('Restock At', 'new-product-restock', '', 'number', 'min="0" placeholder="e.g. 5"')}
+    </div>
+    <button class="btn btn-primary" id="save-product" type="button">Save Product</button>`);
 
   document.getElementById('save-product').addEventListener('click', async () => {
-    const productName = document.getElementById('new-product-name').value.trim();
-    const quantity = Number(document.getElementById('new-product-quantity').value) || 0;
-    const sellingPrice = Number(document.getElementById('new-product-price').value);
-    const reStockAt = Number(document.getElementById('new-product-restock').value);
-
-    if (!productName || isNaN(sellingPrice) || isNaN(reStockAt)) {
-      showAlert('Product name, selling price, and restock level are required.', 'error');
-      return;
+    const v = (id) => document.getElementById(id).value.trim();
+    const productName = v('new-product-name');
+    const price = Number(v('new-product-price'));
+    if (!productName || v('new-product-price') === '' || isNaN(price)) {
+      return showAlert('Product name and selling price are required.', 'error');
     }
-
     try {
-      await api.addProduct({ productName, quantity, sellingPrice, reStockAt });
-      showAlert(`"${productName}" added.`, 'success');
-      renderAddProduct(); // reset the form
+      await api.addProduct({
+        productName,
+        quantity: Number(v('new-product-quantity')) || 0,
+        sellingPrice: price,
+        reStockAt: Number(v('new-product-restock')) || 0
+      });
+      renderAddProduct();
+      showAlert(`"${productName}" added.`);
     } catch (err) {
-      showAlert("Couldn't save the product. Check the backend logs.", 'error');
+      showAlert(err.message, 'error');
     }
   });
 }
 
-// ---------------- Page 7: Add Supplier ----------------
-function renderAddSupplier() {
-  pageContentEl.innerHTML = `
-    <div class="card">
+// ---------------- Page: Suppliers (add + list) ----------------
+async function renderSuppliers() {
+  showLoading();
+  try {
+    supplierCache = await api.getSuppliers();
+  } catch (err) {
+    return showError("Couldn't load suppliers. Is the backend running?");
+  }
+  pageContentEl.innerHTML =
+    card(`
       <div class="form-row">
-        <div>
-          <label for="new-supplier-name">Supplier Name</label>
-          <input type="text" id="new-supplier-name" placeholder="e.g. Auto Parts Lahore">
-        </div>
-        <div>
-          <label for="new-supplier-phone">Phone Number</label>
-          <input type="text" id="new-supplier-phone" placeholder="e.g. 0300-1234567">
-        </div>
+        ${field('Supplier Name', 'new-supplier-name', '', 'text', 'placeholder="e.g. Auto Parts Lahore"')}
+        ${field('Phone Number (optional)', 'new-supplier-phone', '', 'text', 'placeholder="e.g. 0300-1234567"')}
       </div>
-      <button class="btn btn-primary" id="save-supplier" type="button">Save Supplier</button>
-    </div>
-  `;
+      <button class="btn btn-primary" id="save-supplier" type="button">Add Supplier</button>`) +
+    card(table(['Supplier', 'Phone', '>'],
+      supplierCache.map(s => `<tr><td>${esc(s.supplierName)}</td><td>${esc(s.supplierPhone || '—')}</td>${actions('supplier', s.supplierID)}</tr>`).join(''),
+      'No suppliers yet.'));
 
   document.getElementById('save-supplier').addEventListener('click', async () => {
-    const supplierName = document.getElementById('new-supplier-name').value.trim();
-    const supplierPhone = document.getElementById('new-supplier-phone').value.trim();
-
-    if (!supplierName) {
-      showAlert('Supplier name is required.', 'error');
-      return;
-    }
-
+    const name = document.getElementById('new-supplier-name').value.trim();
+    if (!name) return showAlert('Supplier name is required.', 'error');
     try {
-      await api.addSupplier({ supplierName, supplierPhone });
-      showAlert(`"${supplierName}" added.`, 'success');
-      renderAddSupplier(); // reset the form
+      await api.addSupplier({ supplierName: name, supplierPhone: document.getElementById('new-supplier-phone').value.trim() });
+      renderSuppliers();
+      showAlert(`"${name}" added.`);
     } catch (err) {
-      showAlert("Couldn't save the supplier. Check the backend logs.", 'error');
+      showAlert(err.message, 'error');
     }
   });
 }
 
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str ?? '';
-  return div.innerHTML;
-}
-
+// ---------------- Start ----------------
 loadPage('inventory');
