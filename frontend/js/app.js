@@ -11,6 +11,8 @@ let inventoryCache = [];
 let historyCache = [];
 let supplierCache = [];
 let alertTimer;
+let inventorySort = { key: 'productName', dir: 1 };
+let priceCache = [];
 
 const PAGES = {
   inventory: ['Inventory', renderInventory, 'Everything in stock, at a glance'],
@@ -110,6 +112,10 @@ function openModal({ title, body, saveLabel = 'Save', danger = false, onSave, su
   document.body.appendChild(overlay);
 
   const close = () => overlay.remove();
+  overlay.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') close();
+    if (e.key === 'Enter' && e.target.tagName === 'INPUT') overlay.querySelector('[data-save]').click();
+  });
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay || e.target.hasAttribute('data-close')) close();
   });
@@ -127,7 +133,7 @@ function openModal({ title, body, saveLabel = 'Save', danger = false, onSave, su
     }
   });
   const first = overlay.querySelector('input, select');
-  if (first) first.focus();
+  (first || overlay.querySelector('[data-close]')).focus();
 }
 
 function confirmDelete(title, text, action, success) {
@@ -285,24 +291,39 @@ async function renderInventory() {
     stat('Needs restock', lowCount, lowCount ? 'warn' : '') +
     stat('Stock value (at selling price)', money(stockValue)) + '</div>';
   pageContentEl.innerHTML = statsHtml + card(
-    '<div class="toolbar"><input type="text" id="inventory-search" class="search-input" placeholder="Search by product name…"></div>' +
+    '<div class="toolbar"><input type="text" id="inventory-search" class="search-input" placeholder="Search by product name…"><div class="tools"><button class="btn btn-secondary" data-tool="csv-inventory" type="button">Export CSV</button><button class="btn btn-secondary" data-tool="print" type="button">Print</button></div></div>' +
     table(['Product Name', '>Quantity', '>Selling Price', '>Restock At', 'Status', '>'],
       inventoryRows(inventoryCache), 'No products yet. Use "Add Product" to create your first one.', 'inventory-body')
   );
-  document.getElementById('inventory-search').addEventListener('input', (e) => {
-    const term = e.target.value.trim().toLowerCase();
-    const list = inventoryCache.filter(p => p.productName.toLowerCase().includes(term));
+  const sortKeys = ['productName', 'quantity', 'sellingPrice', 'reStockAt', 'status'];
+  const ths = [...document.querySelectorAll('#page-content thead th')];
+  const refresh = () => {
+    const term = document.getElementById('inventory-search').value.trim().toLowerCase();
     document.getElementById('inventory-body').innerHTML =
-      inventoryRows(list) || '<tr><td colspan="6" class="empty-state">No matching products.</td></tr>';
+      inventoryRows(sortedInventory(term)) || '<tr><td colspan="6" class="empty-state">No matching products.</td></tr>';
+    ths.forEach((th, i) => {
+      th.classList.toggle('asc', sortKeys[i] === inventorySort.key && inventorySort.dir === 1);
+      th.classList.toggle('desc', sortKeys[i] === inventorySort.key && inventorySort.dir === -1);
+    });
+  };
+  ths.forEach((th, i) => {
+    if (!sortKeys[i]) return;
+    th.classList.add('sortable');
+    th.addEventListener('click', () => {
+      inventorySort = { key: sortKeys[i], dir: inventorySort.key === sortKeys[i] ? -inventorySort.dir : 1 };
+      refresh();
+    });
   });
+  document.getElementById('inventory-search').addEventListener('input', refresh);
+  refresh();
 }
 
 // ---------------- Page: Price List ----------------
 async function renderPriceList() {
   showLoading();
   try {
-    const rows = await api.getPriceList();
-    pageContentEl.innerHTML = card(table(['Product Name', '>Selling Price', '>'],
+    const rows = (priceCache = await api.getPriceList());
+    pageContentEl.innerHTML = card('<div class="toolbar toolbar-tools"><div class="tools"><button class="btn btn-secondary" data-tool="csv-prices" type="button">Export CSV</button><button class="btn btn-secondary" data-tool="print" type="button">Print</button></div></div>' + table(['Product Name', '>Selling Price', '>'],
       rows.map(p => `<tr><td>${esc(p.productName)}</td><td class="right">${money(p.sellingPrice)}</td>${actions('product', p.productID)}</tr>`).join(''),
       'No products yet.'));
   } catch (err) {
@@ -505,6 +526,40 @@ async function renderSuppliers() {
     }
   });
 }
+
+// ---------------- Sorting, export, print ----------------
+function sortedInventory(term) {
+  const { key, dir } = inventorySort;
+  const val = (p) => key === 'status' ? (p.quantity <= p.reStockAt ? 0 : 1)
+    : key === 'productName' ? p.productName.toLowerCase() : Number(p[key]);
+  return inventoryCache
+    .filter(p => p.productName.toLowerCase().includes(term))
+    .sort((a, b) => (val(a) > val(b) ? 1 : val(a) < val(b) ? -1 : 0) * dir);
+}
+
+function downloadCsv(filename, rows) {
+  const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const csv = '\uFEFF' + rows.map(r => r.map(q).join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+pageContentEl.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-tool]');
+  if (!b) return;
+  const t = b.dataset.tool;
+  if (t === 'print') window.print();
+  if (t === 'csv-inventory') {
+    downloadCsv('inventory.csv', [['Product', 'Quantity', 'Selling price', 'Restock at', 'Status'],
+      ...inventoryCache.map(p => [p.productName, p.quantity, p.sellingPrice, p.reStockAt, p.quantity <= p.reStockAt ? 'RESTOCK' : 'OK'])]);
+  }
+  if (t === 'csv-prices') {
+    downloadCsv('price-list.csv', [['Product', 'Selling price'], ...priceCache.map(p => [p.productName, p.sellingPrice])]);
+  }
+});
 
 // ---------------- Start ----------------
 loadPage('inventory');
