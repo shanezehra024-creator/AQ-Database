@@ -6,7 +6,7 @@ A small inventory system for a spare-parts shop run by one person. It keeps trac
 
 I started this as a database exercise. I wanted to practice designing a proper relational schema, so I sketched out four tables (products, suppliers, purchases, purchase items) and a trigger that adds to stock whenever a purchase is saved. Then I kept going until it turned into a full app with a front end, a backend, and a live deployment. I designed the database and decided what the shop needed. I built the app around it with AI assistance.
 
-![Inventory page](screenshots/inventory.png)
+![Inventory page](inventory.jpeg)
 
 ## What it does
 
