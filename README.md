@@ -43,21 +43,6 @@ frontend/
 schema-postgres.sql
 ```
 
-## Running it yourself
-
-You need Node.js and a PostgreSQL database. A free Supabase project works fine.
-
-1. Run `schema-postgres.sql` in your database's SQL editor. This creates the tables and the stock trigger.
-2. Inside `backend/`, copy `.env.example` to `.env` and put your connection string in `DATABASE_URL`.
-3. From the `backend` folder:
-
-```
-npm install
-npm start
-```
-
-4. Open `http://localhost:3000`.
-
 ## How a purchase becomes stock
 
 When you save a purchase, the backend inserts a row into `purchase`, then one row into `purchaseitems` for each product. A trigger on `purchaseitems` adds the purchased quantity to that product's stock. The backend never updates stock directly, so the database stays the single source of truth.
@@ -71,4 +56,4 @@ When you save a purchase, the backend inserts a row into `purchase`, then one ro
 
 ## What I learned
 
-Most of my time went on getting the pieces to talk to each other, not on writing features. The first version used SQL Server on my own machine, and getting a Node app to connect to it turned into days of networking settings. Moving to a hosted Postgres database fixed that and also meant the shop could open the app from a different place with nothing installed.
+Most of my time went on getting the pieces to talk to each other, and understanding how different software tools collaborate,  instead of writing features. The first version used SQL Server on my own machine, and getting a Node app to connect to it turned into days of networking settings. Moving to a hosted Postgres database fixed that and also meant the shop could open the app from a different place with nothing installed.
