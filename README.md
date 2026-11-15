@@ -17,7 +17,7 @@ I started this as a database exercise. I wanted to practice designing a proper r
 - **Add purchase**, where you pick a supplier (optional), a date, and one or more products with a quantity and cost for each. Saving it creates the purchase and its items in a single transaction, and a database trigger raises the stock levels.
 - **Edit and delete** on every list. Deleting a purchase takes its stock back off. A product that already has purchase history can't be deleted, and the app says why.
 
-![Add purchase page](screenshots/add-purchase.png)
+![Add purchase page](purchase.jpeg)
 
 ## Built with
 
